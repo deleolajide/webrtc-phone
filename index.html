@@ -1,0 +1,369 @@
+<html>
+  <head>
+	<link rel="stylesheet" href="bootstrap.min.css">
+	<link rel="stylesheet" href="dialpad.css">
+	<link rel="stylesheet" href="candybar.css">
+
+	<script src="candybar.js"></script>
+	<script src="att.phonenumber.js"></script>
+	<script src="dialpad.js"></script>
+    <script src="jquery_1_4_2.js"></script>
+    <script src="webrtc.phono.js"></script>
+    <script src="strophe-openfire.js"></script>
+
+	<script>
+		window.webrtcUser = null;
+
+		var addthis_config = {
+				login:{
+						services:{
+							facebook:{
+									id:'124473377640969'
+							},
+							twitter:{
+									id:'HbSiSrhSfswMqB40AcXYA'
+							},
+							google:{
+									id:'310765426578.apps.googleusercontent.com'
+							}
+						},
+						callback:function(user){
+								document.getElementById("addthis_toolbox").style.display = "none";
+
+								if (user.thumbnailURL) avatar = user.thumbnailURL;
+
+								callerId = user.name;
+								window.webrtcUser = {email: user.email, service: user.service, name: user.name, signature: user.addthis_signature, avatar: user.thumbnailURL};
+								setPresence();
+						}
+				}
+		};
+	</script>
+	<script src="https://s7.addthis.com/js/300/addthis_widget.js#pubid=AItOawkJepT2Y6cSJOFdK0cDDsP5hRP6m11l5mg"></script>
+    <script>
+
+	var avatar = 'unknown.jpg';
+	var callerId = "unknown";
+	var domain = "81.201.82.25";
+	var prefix = "sip:";
+	var iNums = {};
+
+	window.dialer = new Dialpad({
+		onPress: function (key) {
+			console.log('a key was pressed', key);
+
+			if (window.candybar.call) window.candybar.call.digit(key);
+		},
+		onCallableNumber: function (number) {
+			console.log('we have a number that seems callable', number);
+			//makeCall(number);
+		},
+		onHide: function () {
+			console.log('removed it');
+		},
+		onCall: function (number) {
+			console.log('The call button was pressed', number);
+
+			if (window.dialer.getCallLabel() == "Call")
+				makeCall(number);
+			else if (window.dialer.getCallLabel() == "Hangup")
+				window.candybar.call.hangup();
+			else
+				window.candybar.call.answer();
+		}
+	});
+
+    $(document).ready(function()
+    {
+      window.phono = $.phono(
+      {
+        onReady: function()
+        {
+			document.getElementById("dialpadDiv").insertBefore(window.dialer.render());
+
+			window.candybar = new CandyBar({phone: window.phono.phone});
+			window.candybar.render();
+			window.candybar.call = null;
+
+			$("#status").css("display", "none");
+			$("#status").html("Ready");
+
+			console.log("Session Id " + this.sessionId);
+
+			if (urlParam("prefix")) prefix = urlParam("prefix");
+			if (urlParam("domain")) domain = urlParam("domain");
+
+			if (domain == "81.201.82.25" && prefix == "sip:") prefix = "sip:883510";
+			if (prefix == "tel:") domain = "";
+
+			var iNum = urlParam("inum");
+
+			if (iNum)
+			{
+				window.connection = new Openfire.Connection(window.location.protocol + '//' + window.location.host + '/http-bind/');
+				window.connection.resource = iNum;
+				window.connection.addHandler(handlePresence, null,"presence", null, null, null);
+
+				window.connection.connect(window.location.hostname, null, function (status)
+				{
+					console.log("XMPPConnection.connect");
+					console.log(status);
+
+					if (status === Strophe.Status.CONNECTED)
+					{
+						window.connection.send($pres());
+
+						$(window).unload( function() {
+							window.connection.disconnect();
+						});
+
+						if (!window.webrtcUser)
+						{
+							window.webrtcUser = {email: '', service: '', name: iNum,  signature: '', avatar: avatar};
+						}
+
+						setPresence();
+
+						getSessions();
+					}
+				});
+			}
+
+			var destination = urlParam("destination");
+
+			if (destination)
+			{
+				makeCall(destination);
+			}
+
+        },
+		onUnready: function(event) {
+			console.log("Phono disconnected");
+		},
+		onError: function(event) {
+			console.log("Phono error " + event.reason);
+		},
+	    phone: {
+                onIncomingCall: function(event)
+                {
+                	console.log(' call from ' + event.call.initiator);
+
+                	if (window.candybar.call == null)	// ignore when user has active call
+                	{
+						var destination = Strophe.getNodeFromJid(event.call.initiator);
+
+						if (iNums[destination])
+						{
+							var caller = iNums[destination];
+
+							window.candybar.setUser({
+								name: caller.name,
+								number: destination,
+								picUrl: caller.avatar
+							});
+
+						} else {
+							window.candybar.setUser({
+								name: destination,
+								number: destination,
+								picUrl: 'unknown.jpg'
+							});
+						}
+
+						window.candybar.call = event.call;
+						window.candybar.setState('incoming');
+						window.dialer.setCallLabel('Answer');
+
+						window.candybar.call.bind(
+						{
+							onHangup: function(event)
+							{
+								$("#status").html("Hangup");
+								window.candybar.endGently();
+								window.candybar.call = null;
+
+								window.dialer.setCallLabel('Call');
+							},
+							onAnswer: function(event)
+							{
+								$("#status").html("Answered");
+								window.candybar.setState('active');
+
+								window.dialer.setCallLabel('Hangup');
+							},
+							onError: function(event)
+							{
+								console.log('Phono call error ' + event.reason);
+							}
+						});
+					}
+                }
+        }
+      });
+
+    })
+
+   function setPresence()
+   {
+		console.log("setPresence");
+		console.log(window.webrtcUser);
+
+		if (window.connection)
+		{
+			// Send online presence
+
+			var presence = $pres({to: "openlink." + window.connection.domain});
+			presence.c('status').t(window.webrtcUser.name + "|" + (window.webrtcUser.avatar ? window.webrtcUser.avatar : "unknown.jpg")).up();
+			presence.c('show').t('dnd').up();
+			presence = presence.c('collaboration', {xmlns: 'http://inspiredfutures.co.uk/protocol/collaboration'}).t(window.phono.sessionId);
+			window.connection.send(presence);
+		}
+   }
+
+
+   function handlePresence(presence)
+   {
+		console.log("handlePresence");
+		console.log(presence);
+
+		var from = $(presence).attr('from');
+		var iNum = Strophe.getResourceFromJid(from);
+		var xquery = presence.getElementsByTagName("x");
+
+		if (xquery.length == 0)
+		{
+			var type = $(presence).attr('type');
+
+			if (type == "unavailable")
+			{
+				iNums[iNum] = null;
+
+			} else {
+				var status = $(presence).find('status').text();
+				var session = $(presence).find('collaboration').text();
+
+				var pos = status.indexOf('|');
+
+				if (pos > -1)
+				{
+					console.log("getSessions register " + session + " " + status + " " + iNum);
+					iNums[iNum] = {name: status.substring(0, pos), avatar: status.substring(pos+1), session: session, iNum: iNum}
+				}
+			}
+		}
+
+		return true;
+   };
+
+   function getSessions ()
+   {
+		console.log("getSessions ");
+
+		var identities = [];
+		var iq = $iq({type: 'get', to: "openlink." + this.connection.domain}).c('collaboration', {xmlns: 'http://inspiredfutures.co.uk/protocol/collaboration', action: "getSessions"});
+
+		this.connection.sendIQ(iq, function(response)
+		{
+			var $response = $(response);
+
+			$('session', response).each(function()
+			{
+					var iNum = Strophe.getNodeFromJid($(this).attr('id'));
+					var status = $(this).attr('activity');
+					var session = $(this).attr('identity');
+
+					var pos = status.indexOf('|');
+
+					if (pos > -1)
+					{
+						console.log("getSessions register " + session + " " + status + " " + iNum);
+						iNums[iNum] = {name: status.substring(0, pos), avatar: status.substring(pos+1), session: session, iNum: iNum}
+					}
+			});
+		});
+   	};
+
+    function makeCall(destination)
+    {
+		console.log("makeCall " + destination);
+
+    	$("#status").html("Busy");
+
+    	var caller_id = callerId;
+
+    	if (window.connection) caller_id = window.connection.resource;	// use iNum if given
+
+    	if (iNums[destination])
+    	{
+    		var callee = iNums[destination];
+
+    		sipUri = "sip:" + callee.session;
+
+			window.candybar.setUser({
+				name: callee.name,
+				number: destination,
+				picUrl: callee.avatar
+			});
+
+			console.log("makeCall found " + sipUri);
+
+    	} else {
+
+			window.candybar.setUser({
+				name: callerId,
+				number: destination,
+				picUrl: avatar
+			});
+
+			var sipUri = prefix + destination + "@" + domain
+
+			if (prefix == "tel:") sipUri = prefix + destination
+		}
+
+        window.candybar.call = window.phono.phone.dial(sipUri, {
+          callerId: caller_id,
+          onRing: function() {
+            $("#status").html("Ringing");
+            window.dialer.setCallLabel('Hangup');
+            window.candybar.setState('calling');
+
+          },
+          onAnswer: function() {
+            $("#status").html("Answered");
+			window.candybar.setState('active');
+            window.dialer.setCallLabel('Hangup');
+          },
+          onHangup: function() {
+            $("#status").html("Hangup");
+
+			//window.candybar.setState('inactive');
+            //window.candybar.clearUser();
+            window.candybar.endGently();
+
+            window.candybar.call = null;
+            window.dialer.setCallLabel('Call');
+          }
+        });
+    }
+
+    function urlParam(name)
+    {
+		var results = new RegExp('[\\?&]' + name + '=([^&#]*)').exec(window.location.href);
+		if (!results) { return undefined; }
+		return decodeURIComponent(results[1]) || undefined;
+    }
+
+    </script>
+
+  </head>
+  <body>
+
+	<div id="dialpadDiv" style="position: absolute; width: 500px: height: 300px;"/>
+    <span id="status">Loading...</span>
+	<div class="addthis_toolbox" id="addthis_toolbox">
+		<a class="addthis_login_facebook"></a>
+		<a class="addthis_login_twitter"></a>
+		<a class="addthis_login_google"></a>
+	</div>
+  </body>
+</html>

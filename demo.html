@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Dialer Demo</title>
+        <link rel="stylesheet" href="bootstrap.min.css">
+        <link rel="stylesheet" href="dialpad.css">
+        <script src="att.phonenumber.js"></script>
+        <script src="dialpad.js"></script>
+        <script>
+            window.dialer = new Dialpad({
+                onPress: function (key) {
+                    console.log('a key was pressed', key);
+                },
+                onCallableNumber: function (number) {
+                    console.log('we have a number that seems callable', number);
+                },
+                onHide: function () {
+                    console.log('removed it');
+                },
+                onCall: function (number) {
+                    console.log('The call button was pressed', number);
+                }
+            });
+
+            document.addEventListener('DOMContentLoaded', function () {
+              document.body.insertBefore(dialer.render(), document.body.firstChild);
+            }, false);
+        </script>
+    </head>
+    <body>
+        <div class="container offset4 span8">
+            <h1>Dialer Demo</h1>
+            <p>dialer.js renders a dialer</p>
+            <p>It is meant to be used with phone-enabled web applications. It does not contain any call functionality, it's merely a self-contained UI piece meant to provide an easily customizable dialpad you can add to your app.</p>
+            <p>It also registers and unregisters handlers for keyboard events. So while the dialer is visible you can still use the keyboard to type in the number.</p>
+
+            <h4>How to use it:</h4>
+            <pre>
+var dialer = new Dialer({
+    onPress: function (key) {
+        console.log('a key was pressed', key);
+    },
+    onCallableNumber: function (number) {
+        console.log('we have a number that seems callable', number);
+    },
+    onHide: function () {
+        console.log('removed it');
+    },
+    onCall: function (number) {
+        console.log('The call button was pressed', number);
+    }
+});
+
+// calling render returns the rendered dialer
+// as a DOM element with all the right handlers
+dialer.render();
+
+// OPTIONALLY: you can also add event listeners later if you prefer.
+dialer.on('call', function (number) {
+    // assuming you've created a phone object..
+    phone.dial(number);
+});
+            </pre>
+        </div>
+    </body>
+</html>
